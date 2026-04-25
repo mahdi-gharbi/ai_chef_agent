@@ -1,6 +1,7 @@
 # ==========================================
 # Top-Tier AI Private Chef Agent Dependencies
 # ==========================================
+langchain-google-genai
 
 # LangChain Core
 langchain>=1.2.14
@@ -36,4 +37,4 @@ unstructured>=0.10.0
 # Network Requests
 requests>=2.31.0
 
-# See lora_tuning/requirements_lora.txt for LoRA fine-tuning dependencies (install separately in Colab)
+# See lora_tuning/requirements_lora.txt for LoRA fine-tuning dependencies (install separately in Colab)langchain-google-genai
