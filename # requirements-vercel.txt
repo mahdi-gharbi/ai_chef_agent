@@ -1,0 +1,42 @@
+# requirements-vercel.txt
+# ─────────────────────────────────────────────────────────────────────────────
+# Slim dependency set for Vercel serverless deployment.
+# Heavy deps (bitsandbytes, torch, TTS, vision models) are excluded because
+# Vercel functions have a 250 MB compressed size limit.
+#
+# Full local dev: use requirements.txt
+# Vercel deploy:  Vercel reads this file via vercel.json > builds[].config
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Web framework
+fastapi>=0.111.0
+uvicorn>=0.29.0
+
+# LangChain core
+langchain>=0.2.0
+langchain-core>=0.2.0
+langgraph>=0.1.0
+langchain-community>=0.2.0
+
+# Cloud LLM adapters (pick the one(s) you use)
+langchain-google-genai>=1.0.0    # Gemini
+dashscope>=1.19.0                 # Qwen / DashScope
+
+# Vector store & embeddings
+langchain-chroma>=1.1.0
+chromadb>=0.5.0
+
+# Document loaders
+pypdf>=4.0.0
+unstructured>=0.13.0
+
+# Data / config
+pyyaml>=6.0
+python-dotenv>=1.0.0
+
+# MCP client
+mcp>=1.0.0
+
+# Utilities
+httpx>=0.27.0
+pydantic>=2.0.0

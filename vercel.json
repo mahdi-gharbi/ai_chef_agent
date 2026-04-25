@@ -1,0 +1,28 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/index.py",
+      "use": "@vercel/python",
+      "config": {
+        "maxLambdaSize": "50mb"
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "api/index.py"
+    }
+  ],
+  "env": {
+    "DASHSCOPE_API_KEY": "@dashscope_api_key",
+    "GEMINI_API_KEY": "@gemini_api_key",
+    "SPOONACULAR_API_KEY": "@spoonacular_api_key"
+  },
+  "functions": {
+    "api/index.py": {
+      "maxDuration": 60
+    }
+  }
+}
