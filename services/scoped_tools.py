@@ -32,10 +32,14 @@ def scope_tools(tools):
     for original in tools:
         if original.name not in API_TOOLS:
             continue
-        async def call(_tool=original, **kwargs):
+        # MCP adapter versions may convert failures to model-visible content.
+        # Force them to propagate so our public error contract can redact them.
+        raw = original.model_copy(update={'handle_tool_error': False, 'handle_validation_error': False})
+        async def call(_tool=raw, **kwargs):
             return await invoke_scoped(_tool, kwargs)
         # The MCP adapter returns StructuredTool instances. Preserve schemas/descriptions.
         # original.ainvoke(dict) already unwraps the adapter's content/artifact pair.
         # This wrapper therefore returns content only, even for MCP adapter tools.
-        result.append(original.model_copy(update={'coroutine': call, 'func': None, 'response_format': 'content'}))
+        result.append(original.model_copy(update={'coroutine': call, 'func': None, 'response_format': 'content',
+                                                'handle_tool_error': False, 'handle_validation_error': False}))
     return result
