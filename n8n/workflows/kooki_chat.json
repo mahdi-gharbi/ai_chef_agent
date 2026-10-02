@@ -1,0 +1,619 @@
+{
+  "name": "Kooki - Chat via FastAPI (Phase 1)",
+  "nodes": [
+    {
+      "id": "3e3ac716-60a9-4452-9a1b-92399476415a",
+      "name": "Webhook - Chat Input",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "kooki-chat",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "3e396392-f974-4109-ba7f-65670ec0932f"
+    },
+    {
+      "id": "2c7aead0-20d7-44cf-81ba-4353ad6d7105",
+      "name": "Validate - Normalize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const b = $json.body ?? {};\nconst id = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;\nconst valid = typeof b.user_id === 'string' && id.test(b.user_id)\n && typeof b.session_id === 'string' && id.test(b.session_id)\n && typeof b.message === 'string' && b.message.trim().length > 0 && b.message.length <= 8000\n && (b.metadata === undefined || (b.metadata !== null && typeof b.metadata === 'object' && !Array.isArray(b.metadata)))\n && JSON.stringify(b.metadata ?? {}).length <= 4096\n && (b.idempotency_key === undefined || (typeof b.idempotency_key === 'string' && id.test(b.idempotency_key)));\nif (!valid) return [{json:{valid:false,http_status:422,result:{status:'error',execution_id:null,error_type:'VALIDATION_ERROR',message:'The request is invalid.',retryable:false}}}];\nreturn [{json:{valid:true,payload:{user_id:b.user_id,session_id:b.session_id,message:b.message.trim(),metadata:{...(b.metadata ?? {}),channel:'n8n'},idempotency_key:b.idempotency_key ?? `n8n-${$execution.id}`}}}];",
+        "mode": "runOnceForAllItems"
+      }
+    },
+    {
+      "id": "eae2bf16-383b-418a-8bac-2e6c36680791",
+      "name": "Valid input?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        480,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "fd380c6f-82b1-450d-a44d-fa675047c861",
+              "leftValue": "={{ $json.valid === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "2c2eaf48-68c0-4842-a591-ee1c355bef15",
+      "name": "Set Execution Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        -100
+      ],
+      "parameters": {
+        "jsCode": "// Edit this non-secret URL for your network. Never put credentials in this node.\nreturn [{json:{payload:$json.payload,base_url:'http://host.docker.internal:8000'}}];",
+        "mode": "runOnceForAllItems"
+      }
+    },
+    {
+      "id": "be305612-7d42-4962-bdd9-b13bf59c2776",
+      "name": "POST Kooki - Attempt 1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        -100
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Set Execution Context').first().json.base_url + '/api/chat' }}",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Set Execution Context').first().json.payload) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 120000
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": false
+    },
+    {
+      "id": "dc584300-8cd9-4de4-a497-2840d131b084",
+      "name": "Assess response 1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1180,
+        -100
+      ],
+      "parameters": {
+        "jsCode": "const r = $json.body;\nif (r && (r.status === 'success' || r.status === 'error')) {\n  return [{json:{result:r,http_status:$json.statusCode ?? (r.status === 'success' ? 200 : 502)}}];\n}\n// A transport failure is ambiguous. Retrying is safe only with the SAME durable key.\nreturn [{json:{http_status:503,result:{status:'error',execution_id:null,error_type:'API_TRANSPORT_ERROR',message:'The Kooki API could not be reached.',retryable:true}}}];",
+        "mode": "runOnceForAllItems"
+      }
+    },
+    {
+      "id": "1c78c3da-6bf8-4c97-a0a3-6772f2c98275",
+      "name": "Success 1?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1380,
+        -100
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "45a36c7a-29fc-4b0a-b11d-21100ee294a0",
+              "leftValue": "={{ $json.result.status === 'success' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "31caa3ec-f59c-44e8-bebe-dc2fbd7c6630",
+      "name": "Retryable 1?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1380,
+        160
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ab8efe5c-4263-4d9c-b1f6-19cc42d0010e",
+              "leftValue": "={{ $json.result.retryable === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "016f569c-6281-4118-880a-cc6e20fbdaae",
+      "name": "Backoff 1",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1560,
+        160
+      ],
+      "parameters": {
+        "resume": "timeInterval",
+        "amount": 2,
+        "unit": "seconds"
+      },
+      "webhookId": "e30a5fb3-5bd5-4f46-bbc6-1c86deae8878"
+    },
+    {
+      "id": "6e4bd983-519d-42bf-b0d9-4e438dfd96c5",
+      "name": "POST Kooki - Attempt 2",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1680,
+        -100
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Set Execution Context').first().json.base_url + '/api/chat' }}",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Set Execution Context').first().json.payload) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 120000
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": false
+    },
+    {
+      "id": "456113bc-a5ea-4a78-a967-c57b73c6c129",
+      "name": "Assess response 2",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1900,
+        -100
+      ],
+      "parameters": {
+        "jsCode": "const r = $json.body;\nif (r && (r.status === 'success' || r.status === 'error')) {\n  return [{json:{result:r,http_status:$json.statusCode ?? (r.status === 'success' ? 200 : 502)}}];\n}\n// A transport failure is ambiguous. Retrying is safe only with the SAME durable key.\nreturn [{json:{http_status:503,result:{status:'error',execution_id:null,error_type:'API_TRANSPORT_ERROR',message:'The Kooki API could not be reached.',retryable:true}}}];",
+        "mode": "runOnceForAllItems"
+      }
+    },
+    {
+      "id": "5a733785-a30f-4e10-b36e-f3fde74564df",
+      "name": "Success 2?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2100,
+        -100
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "848d2115-c71e-496e-a5ed-b6cad895799d",
+              "leftValue": "={{ $json.result.status === 'success' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "9108e988-dfd0-44d9-b45a-3ec460436265",
+      "name": "Retryable 2?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2100,
+        160
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "b7b5a749-69bd-4a55-ba70-999300e534df",
+              "leftValue": "={{ $json.result.retryable === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "df173fb9-0e13-450c-aa35-c0eb9f4821c3",
+      "name": "Backoff 2",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2280,
+        160
+      ],
+      "parameters": {
+        "resume": "timeInterval",
+        "amount": 4,
+        "unit": "seconds"
+      },
+      "webhookId": "2c746442-0bab-4985-b36a-4f6c8d7563f3"
+    },
+    {
+      "id": "55ae148a-b1ba-4905-93cc-33ed9e8dcbc9",
+      "name": "POST Kooki - Attempt 3",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2400,
+        -100
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Set Execution Context').first().json.base_url + '/api/chat' }}",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Set Execution Context').first().json.payload) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 120000
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": false
+    },
+    {
+      "id": "68a0f4d0-6aed-4c46-8796-cd37f844a825",
+      "name": "Assess response 3",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2620,
+        -100
+      ],
+      "parameters": {
+        "jsCode": "const r = $json.body;\nif (r && (r.status === 'success' || r.status === 'error')) {\n  return [{json:{result:r,http_status:$json.statusCode ?? (r.status === 'success' ? 200 : 502)}}];\n}\n// A transport failure is ambiguous. Retrying is safe only with the SAME durable key.\nreturn [{json:{http_status:503,result:{status:'error',execution_id:null,error_type:'API_TRANSPORT_ERROR',message:'The Kooki API could not be reached.',retryable:true}}}];",
+        "mode": "runOnceForAllItems"
+      }
+    },
+    {
+      "id": "1050c6eb-6d0d-44c8-a906-176ddbbc9cd3",
+      "name": "Respond - Final",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        3320,
+        0
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.result }}",
+        "options": {
+          "responseCode": "={{ $json.http_status }}"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "POST Kooki - Attempt 1": {
+      "main": [
+        [
+          {
+            "node": "Assess response 1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assess response 1": {
+      "main": [
+        [
+          {
+            "node": "Success 1?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Success 1?": {
+      "main": [
+        [
+          {
+            "node": "Respond - Final",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Retryable 1?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retryable 1?": {
+      "main": [
+        [
+          {
+            "node": "Backoff 1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond - Final",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Backoff 1": {
+      "main": [
+        [
+          {
+            "node": "POST Kooki - Attempt 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST Kooki - Attempt 2": {
+      "main": [
+        [
+          {
+            "node": "Assess response 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assess response 2": {
+      "main": [
+        [
+          {
+            "node": "Success 2?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Success 2?": {
+      "main": [
+        [
+          {
+            "node": "Respond - Final",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Retryable 2?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retryable 2?": {
+      "main": [
+        [
+          {
+            "node": "Backoff 2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond - Final",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Backoff 2": {
+      "main": [
+        [
+          {
+            "node": "POST Kooki - Attempt 3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST Kooki - Attempt 3": {
+      "main": [
+        [
+          {
+            "node": "Assess response 3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assess response 3": {
+      "main": [
+        [
+          {
+            "node": "Respond - Final",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook - Chat Input": {
+      "main": [
+        [
+          {
+            "node": "Validate - Normalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate - Normalize": {
+      "main": [
+        [
+          {
+            "node": "Valid input?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid input?": {
+      "main": [
+        [
+          {
+            "node": "Set Execution Context",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond - Final",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Execution Context": {
+      "main": [
+        [
+          {
+            "node": "POST Kooki - Attempt 1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}
