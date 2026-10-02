@@ -11,7 +11,8 @@ from langchain_core.messages import BaseMessage, SystemMessage
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 
-from agent.router import classify_intent, get_specialized_prompt
+from agent.router import classify_intent_async, get_specialized_prompt
+from services.execution_context import current_execution, ExecutionContext
 from agent.middleware import all_middleware
 from utils.logger_handler import get_logger
 
@@ -51,6 +52,9 @@ logger = get_logger("ai_chef.multi_agent_graph")
 # ==========================================
 class MultiAgentState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
+    user_id: str
+    session_id: str
+    metadata: dict
     intent: str   # "recipe" | "health" | "fridge" | "general"
 
 
@@ -111,7 +115,7 @@ def build_multi_agent_graph(llm, all_tools: list):
     )
 
     # Orchestrator node
-    def orchestrator_node(state: MultiAgentState) -> dict:
+    async def orchestrator_node(state: MultiAgentState) -> dict:
         """
         Intent routing node.
         If the UI layer already pre-filled the intent, just pass it through (no extra LLM call).
@@ -124,8 +128,8 @@ def build_multi_agent_graph(llm, all_tools: list):
 
         human_msgs = [m for m in state["messages"] if m.type == "human"]
         query = human_msgs[-1].content if human_msgs else ""
-        intent = classify_intent(query)
-        logger.info(f"[Orchestrator] Intent classified: '{query[:40]}' → {intent}")
+        intent = await classify_intent_async(query, llm)
+        logger.info("[Orchestrator] Intent classified: %s", intent)
         return {"intent": intent}
 
     # Factory function for specialized agent nodes
@@ -139,8 +143,27 @@ def build_multi_agent_graph(llm, all_tools: list):
             non_system = [m for m in state["messages"] if m.type != "system"]
             messages = [SystemMessage(content=system_prompt)] + non_system
 
-            response = await executor.ainvoke({"messages": messages})
-            return {"messages": response["messages"]}
+            context = current_execution.get()
+            token = None
+            if context is None:
+                # Legacy Streamlit starts its own request scope for each graph turn.
+                from conf import get_agent_config
+                user = get_agent_config().get("user", {})
+                context = ExecutionContext(user.get("default_user_id", ""), user.get("default_session_id", ""), "legacy")
+                token = current_execution.set(context)
+            context.intent = intent_key
+            if state.get("user_id"):
+                messages.insert(1, SystemMessage(content=(
+                    "Trusted execution identity: user_id=" + state["user_id"] +
+                    ", session_id=" + state["session_id"] +
+                    ". Use this user_id for every fridge/allergen tool. API ordering and private filesystem access are unavailable."
+                )))
+            try:
+                response = await executor.ainvoke({"messages": messages})
+                return {"messages": [m for m in response["messages"] if m.type != "system"]}
+            finally:
+                if token is not None:
+                    current_execution.reset(token)
 
         agent_node.__name__ = f"{intent_key}_agent_node"
         return agent_node

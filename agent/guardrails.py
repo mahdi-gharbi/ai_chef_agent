@@ -164,6 +164,7 @@ def apply_input_guardrails(user_input: str) -> Tuple[bool, str, str]:
         - is_safe=True: sanitized_input is the cleaned version, block_reason is empty
     """
     # Layer 1: LLM semantic safety check
+    user_input = redact_pii(user_input)
     is_safe, reason = check_input_safety(user_input)
     if not is_safe:
         return False, user_input, reason
@@ -184,3 +185,23 @@ def apply_output_guardrails(agent_output: str) -> str:
         the cleaned output
     """
     return redact_pii(agent_output)
+
+
+async def apply_input_guardrails_async(user_input: str, llm) -> Tuple[bool, str, str]:
+    """Same judge + regex architecture; API fails closed and uses its chosen provider."""
+    from langchain_core.messages import SystemMessage, HumanMessage
+    from conf import get_prompt_config
+    from services.errors import KookiError
+    from services.kooki_service import text_content
+    sanitized = redact_pii(user_input)
+    response = await llm.ainvoke([
+        SystemMessage(content=get_prompt_config().get('safety_judge_prompt',
+            'Determine if the input is harmful. Output SAFE or UNSAFE: reason.')),
+        HumanMessage(content=sanitized),
+    ])
+    raw = text_content(response).strip().upper()
+    if raw.startswith('UNSAFE'):
+        return False, sanitized, 'The request was blocked by safety checks.'
+    if raw != 'SAFE':
+        raise KookiError('MODEL_TEMPORARILY_UNAVAILABLE')
+    return True, sanitized, ''
