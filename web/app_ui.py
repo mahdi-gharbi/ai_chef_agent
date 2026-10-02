@@ -135,10 +135,12 @@ async def _stream_agent_response(user_input: str, intent: str = "general"):
     full_reply = ""
     async for token in get_multi_agent_response_stream(graph, messages, intent):
         full_reply += token
-        yield token
 
     # Output guard: redact PII from agent reply before saving to memory
     safe_reply = apply_output_guardrails(full_reply)
+    # Redact before display as well as before persistence.
+    for token in safe_reply:
+        yield token
     memory_manager.add_conversation(SESSION_ID, user_input, safe_reply)
 
 

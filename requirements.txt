@@ -37,4 +37,10 @@ unstructured>=0.10.0
 # Network Requests
 requests>=2.31.0
 
-# See lora_tuning/requirements_lora.txt for LoRA fine-tuning dependencies (install separately in Colab)langchain-google-genai
+# Phase 1 API boundary (existing AI dependency floors are unchanged)
+fastapi>=0.115,<1
+uvicorn>=0.29,<1
+pydantic>=2.9,<3
+python-dotenv>=1.0,<2
+
+# See lora_tuning/requirements_lora.txt for LoRA fine-tuning dependencies (install separately in Colab)

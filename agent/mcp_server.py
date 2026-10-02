@@ -108,7 +108,7 @@ def check_allergen_safety(user_id: str, ingredients: str) -> str:
 
 @mcp.tool()
 @log_tool_call
-def remove_food_from_fridge(item_name: str, quantity: float = None) -> str:
+def remove_food_from_fridge(item_name: str, quantity: float = None, user_id: str = None) -> str:
     """
     Remove a single type of ingredient from the fridge (e.g. when it's used up or expired).
     Note: this tool only handles one ingredient at a time. item_name must be a specific ingredient
@@ -119,7 +119,7 @@ def remove_food_from_fridge(item_name: str, quantity: float = None) -> str:
         item_name: specific ingredient name, e.g. "tomato", "beef"
         quantity: how much to remove; if not specified, removes all of that ingredient
     """
-    user_id = config["user"]["default_user_id"]
+    user_id = user_id or config["user"]["default_user_id"]
     success = fridge_db.consume_food_item(user_id, item_name, quantity)
     if success:
         qty_str = f"{quantity}" if quantity is not None else "all"
@@ -129,13 +129,13 @@ def remove_food_from_fridge(item_name: str, quantity: float = None) -> str:
 
 @mcp.tool()
 @log_tool_call
-def clear_fridge_inventory() -> str:
+def clear_fridge_inventory(user_id: str = None) -> str:
     """
     Clear the fridge: remove all ingredients at once.
     Call this when the user says "clear the fridge", "throw everything away", etc.
     Don't use remove_food_from_fridge one by one for this.
     """
-    user_id = config["user"]["default_user_id"]
+    user_id = user_id or config["user"]["default_user_id"]
     count = fridge_db.clear_all_items(user_id)
     if count == 0:
         return "The fridge was already empty, nothing to do."
@@ -144,7 +144,7 @@ def clear_fridge_inventory() -> str:
 
 @mcp.tool()
 @log_tool_call
-def order_fresh_groceries(item_name: str, quantity: float, unit: str) -> str:
+def order_fresh_groceries(item_name: str, quantity: float, unit: str, user_id: str = None) -> str:
     """
     Call this when an ingredient is missing and needs to be ordered from an external supplier.
 
@@ -153,7 +153,7 @@ def order_fresh_groceries(item_name: str, quantity: float, unit: str) -> str:
         quantity: how much to order
         unit: unit of measurement
     """
-    test_user = config["user"]["default_user_id"]
+    test_user = user_id or config["user"]["default_user_id"]
     api_url = mcp_config["order_api_url"]
     timeout = mcp_config["request_timeout"]
 
@@ -186,8 +186,7 @@ def get_nutrition_info(food_name: str) -> str:
     Args:
         food_name: ingredient name, supports Chinese/English (e.g. "tomato", "chicken")
     """
-    # api_key = os.environ.get("SPOONACULAR_API_KEY")
-    api_key = mcp_config["nutrition_api_key"]
+    api_key = os.environ.get("SPOONACULAR_API_KEY")
     api_base = mcp_config["nutrition_api_base"]
     timeout = mcp_config["request_timeout"]
 
@@ -255,7 +254,7 @@ def get_nutrition_info(food_name: str) -> str:
                 f"calories {calories} kcal | protein {protein}g | fat {fat}g | carbs {carbs}g")
 
     except Exception as e:
-        return _fallback_lookup(food_name) or f"Nutrition API error: {str(e)}, and no local cache for {food_name}."
+        return _fallback_lookup(food_name) or f"Nutrition service unavailable, and no local cache for {food_name}."
 
 
 @mcp.tool()

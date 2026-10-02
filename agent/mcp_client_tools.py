@@ -1,4 +1,6 @@
 import os
+import sys
+import shutil
 from typing import List, Tuple
 from langchain_core.tools import BaseTool
 from langchain_mcp_adapters.client import MultiServerMCPClient
@@ -32,14 +34,14 @@ async def load_mcp_tools() -> Tuple[List[BaseTool], MultiServerMCPClient]:
     servers_config = {
         # Server A: our custom business logic (Python)
         "chef_core_service": {
-            "command": "python",
+            "command": sys.executable,
             "args": [custom_server_path],
             "transport": "stdio",
         },
         # Server B: official filesystem server (Node.js)
         # Only allows the agent to safely read files inside local_privacy/
         "local_filesystem": {
-            "command": "npx",
+            "command": shutil.which("npx") or shutil.which("npx.cmd") or "npx",
             "args": ["-y", "@modelcontextprotocol/server-filesystem", privacy_dir],
             "transport": "stdio",
         },

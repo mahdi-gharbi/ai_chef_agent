@@ -177,3 +177,15 @@ def get_specialized_prompt(intent: IntentType) -> str:
     # Fallback: use the general prompt
     logger.warning(f"[Router] Specialized prompt '{prompt_key}' not found, using general prompt")
     return prompts.get("chef_system_prompt", "You are a professional AI chef assistant.")
+
+
+async def classify_intent_async(user_input: str, llm) -> IntentType:
+    """API/graph routing uses the initialized provider, once, inside LangGraph."""
+    from services.kooki_service import text_content
+    response = await llm.ainvoke([
+        SystemMessage(content=get_prompt_config().get('intent_classifier_prompt',
+            'Classify as recipe/health/fridge/general. Return only the label.')),
+        HumanMessage(content=user_input[:8000]),
+    ])
+    raw = text_content(response).strip().lower()
+    return raw if raw in _INTENT_PROMPT_MAP else 'general'
