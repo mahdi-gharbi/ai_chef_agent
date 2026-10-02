@@ -1,5 +1,8 @@
 # 🍽️ AI Chef Agent — Multi-Agent Private Chef System
 
+
+> **Phase 1 FastAPI + n8n:** [setup, contracts, networking and limitations](docs/fastapi-n8n-integration.md), [source audit](docs/phase1-audit.md), [executed verification](docs/phase1-verification.md). No OpenAI API is required. Existing Streamlit remains available. API RAG is opt-in and cloud-backed.
+
 > A multimodal AI private chef system built on **LangChain + LangGraph + MCP**.
 > Features fridge scanning, voice interaction, personalised recipe recommendations, and food safety alerts.
 > Includes a **multi-agent routing architecture**, **guardrails (LLM-as-Judge + PII redaction)**, and a full **QLoRA fine-tuning pipeline** (Qwen2.5-7B + LLM-as-Judge evaluation).
@@ -31,9 +34,9 @@
 | ⚠️ **Food Safety Alerts** | Detects expiring / expired items, blocks allergen risks, and dynamically switches to a safety-warning system prompt |
 | 🎙️ **Voice Interaction** | Speech-to-text (ASR) and text-to-speech (TTS) for hands-free operation |
 | 🔍 **Agentic RAG** | 3-step pipeline: query rewriting → multi-path retrieval → self-reflection, for precise recipe and nutrition lookup |
-| 🔒 **Local Privacy Protection** | Health reports and private recipes stay local — never uploaded to any cloud RAG store |
+| 🔒 **Local Privacy Protection** | Files are local; legacy cloud models may receive their contents. The new API excludes shared filesystem access |
 | 🧠 **Session Memory** | Multi-turn conversation context with sliding-window message history |
-| ☁️🔌 **Cloud / Local Dual Mode** | One config line to switch: cloud quota exhausted? Fall back to local Ollama seamlessly — MCP and RAG still work |
+| ☁️🔌 **Cloud / Local Dual Mode** | Main model can use Ollama; legacy routing/guardrails and existing RAG retain DashScope dependencies |
 | 🔬 **QLoRA Fine-tuning Pipeline** | Self-Instruct data generation → QLoRA training → LLM-as-Judge evaluation, end-to-end |
 
 ---
@@ -103,13 +106,13 @@ flowchart LR
 ```mermaid
 flowchart LR
     TOOL["🔧 Tool call complete"] --> CHECK["@wrap_tool_call\nScan return value\n(keyword match on str output)"]
-    CHECK -->|"Contains [EXPIRED] / [EXPIRING SOON] / [SAFETY ALERT]"| WARN["🚨 Write _shared_context\nwarning_mode = True"]
+    CHECK -->|"Contains [EXPIRED] / [EXPIRING SOON] / [SAFETY ALERT]"| WARN["🚨 Update execution scope\nwarning_mode = True"]
     CHECK -->|"Normal return"| NORMAL["✅ Normal mode"]
     WARN --> PROMPT["@dynamic_prompt\nSwitch to safety-warning system prompt"]
     NORMAL --> PROMPT2["@dynamic_prompt\nKeep normal system prompt"]
 ```
 
-> **Implementation note:** `@wrap_tool_call`, `@before_model`, and `@dynamic_prompt` each receive different `runtime` instances. They share state via a module-level `_shared_context` dict. Warning mode resets automatically at the start of each conversation turn to prevent stale alerts from bleeding into the next round.
+> **Implementation note:** Warning state now belongs to a ContextVar execution scope. Specialized prompts and traces use that scope; the legacy CLI derives warnings from tool messages in the current turn.
 
 ### 🔍 Agentic RAG Pipeline
 
@@ -289,7 +292,7 @@ The `router.py` intent classifier uses the LLM to pick the best agent, then `mul
 
 Two-layer safety filter applied to every response before it reaches the user:
 
-1. **LLM-as-Judge** — `qwen-turbo` checks whether the response violates content safety rules (harmful instructions, dangerous food advice, etc.). Unsafe responses are blocked and replaced with a refusal message.
+1. **LLM-as-Judge** checks input safety. The API uses its chosen model and fails closed; legacy Streamlit uses Qwen. Output uses regex redaction, not a separate safety judge.
 2. **PII Redaction** — regex patterns strip phone numbers, ID card numbers, and email addresses from the output.
 
 ### 🤖 Agent Core (`agent/`)
@@ -333,9 +336,9 @@ Official `@modelcontextprotocol/server-filesystem`, scoped strictly to the `loca
 **`middleware.py` — three middleware layers**
 
 ```
-@wrap_tool_call   → logs tool args / output / latency; detects alert keywords → writes to _shared_context
-@before_model     → logs context before each model call; resets warning_mode at start of each turn
-@dynamic_prompt   → reads _shared_context and switches system prompt to safety-warning mode if needed
+@wrap_tool_call → logs tool name / latency; detects alerts in execution scope
+@before_model → logs message count without content
+@dynamic_prompt → reads scoped specialization / warning state
 ```
 
 ---
@@ -419,7 +422,7 @@ get_chef_response_stream()        ← async generator, streams each Agent step
 
 | Data type | Location | Handling |
 |-----------|----------|----------|
-| 🔒 Health reports, private recipes | `local_privacy/` | Read via local filesystem MCP — never leaves the machine |
+| 🔒 Health reports, private recipes | `local_privacy/` | Read via local filesystem MCP — contents may reach the selected cloud model in legacy Streamlit |
 | 📚 General recipes, nutrition docs | `data/chroma_db/` | Vectorised and indexed for semantic search |
 | 🤝 Combined usage | — | Private content cannot be written to RAG; can complement RAG with general knowledge |
 
@@ -516,7 +519,7 @@ python lora_tuning/evaluate.py
 - 🔒 Files in `local_privacy/` are only accessed via local MCP — principle of least privilege
 - 🌐 `order_fresh_groceries` is a demo — requests go to `httpbin.org`, no real orders are placed
 - 🔑 `DASHSCOPE_API_KEY` is required for cloud mode; without it, LLM / vision / voice / embedding all fail
-- 🔌 In local mode (Ollama), voice and image recognition are unavailable — MCP tools and RAG work normally
+- 🔌 In local mode (Ollama), voice and image recognition are unavailable — MCP works; existing RAG still needs DashScope embeddings, rewriting and reflection
 - 🤖 Gemini mode requires `GEMINI_API_KEY`; voice and image recognition are not supported in Gemini mode
 
 ---
