@@ -1,97 +1,57 @@
-import logging
-import time
+"""Project logging never records tool payloads or credentials."""
 import functools
-from typing import Callable, Any
-
-"""
-Logger module for the project.
-Provides a shared logger to track tool calls, timing, and errors.
-"""
-
-# Singleton logger for the whole project
-_logger = None
+import logging
+import os
+import re
+import time
 
 
-def get_logger(name: str = "ai_chef") -> logging.Logger:
-    """Get (or create) the shared project logger."""
-    global _logger
-    if _logger is not None and name == "ai_chef":
-        return _logger
+class RedactingFormatter(logging.Formatter):
+    def format(self, record):
+        text = super().format(record)
+        for name, value in os.environ.items():
+            if value and len(value) >= 6 and any(part in name.upper() for part in ("KEY", "TOKEN", "PASSWORD", "SECRET")):
+                text = text.replace(value, "[credential redacted]")
+        return re.sub(r"(?i)(api[_-]?key|token|password|authorization)([=:\s]+)[^\s&]+",
+                      r"\1\2[credential redacted]", text)
 
+
+def get_logger(name="ai_chef"):
     logger = logging.getLogger(name)
     if not logger.handlers:
-        logger.setLevel(logging.DEBUG)
+        logger.setLevel(logging.INFO)
         logger.propagate = False
-
         handler = logging.StreamHandler()
-        handler.setLevel(logging.INFO)
-        handler.setFormatter(logging.Formatter(
-            "[%(asctime)s] %(levelname)-8s %(message)s",
-            datefmt="%m/%d/%y %H:%M:%S"
-        ))
+        handler.setFormatter(RedactingFormatter("[%(asctime)s] %(levelname)s %(message)s"))
         logger.addHandler(handler)
-
-    if name == "ai_chef":
-        _logger = logger
     return logger
 
 
-def log_tool_call(func: Callable) -> Callable:
-    """
-    Decorator that automatically logs tool input args, output, and time taken.
-
-    Usage:
-        @log_tool_call
-        def get_fridge_inventory(user_id: str) -> str:
-            ...
-    """
+def log_tool_call(func):
     logger = get_logger("ai_chef.tools")
-
     @functools.wraps(func)
-    def wrapper(*args, **kwargs) -> Any:
-        func_name = func.__name__
-        call_args = ", ".join(
-            [repr(a) for a in args] + [f"{k}={v!r}" for k, v in kwargs.items()]
-        )
-        logger.info(f"CALL  -> {func_name}({call_args})")
-
-        start_time = time.time()
+    def wrapper(*args, **kwargs):
+        start = time.perf_counter()
         try:
             result = func(*args, **kwargs)
-            elapsed = time.time() - start_time
-            result_preview = str(result)[:200]
-            logger.info(f"OK    <- {func_name} ({elapsed:.2f}s) => {result_preview}")
+            logger.info("Tool completed name=%s elapsed_ms=%d", func.__name__, (time.perf_counter()-start)*1000)
             return result
-        except Exception as e:
-            elapsed = time.time() - start_time
-            logger.error(f"ERROR <- {func_name} ({elapsed:.2f}s) => {type(e).__name__}: {e}")
+        except Exception as exc:
+            logger.error("Tool failed name=%s exception_type=%s", func.__name__, type(exc).__name__)
             raise
-
     return wrapper
 
 
-def log_async_tool_call(func: Callable) -> Callable:
-    """Decorator: async version of log_tool_call."""
+def log_async_tool_call(func):
     logger = get_logger("ai_chef.tools")
-
     @functools.wraps(func)
-    async def wrapper(*args, **kwargs) -> Any:
-        func_name = func.__name__
-        call_args = ", ".join(
-            [repr(a) for a in args] + [f"{k}={v!r}" for k, v in kwargs.items()]
-        )
-        logger.info(f"CALL  -> {func_name}({call_args})")
-
-        start_time = time.time()
+    async def wrapper(*args, **kwargs):
+        start = time.perf_counter()
         try:
             result = await func(*args, **kwargs)
-            elapsed = time.time() - start_time
-            result_preview = str(result)[:200]
-            logger.info(f"OK    <- {func_name} ({elapsed:.2f}s) => {result_preview}")
+            logger.info("Tool completed name=%s elapsed_ms=%d", func.__name__, (time.perf_counter()-start)*1000)
             return result
-        except Exception as e:
-            elapsed = time.time() - start_time
-            logger.error(f"ERROR <- {func_name} ({elapsed:.2f}s) => {type(e).__name__}: {e}")
+        except Exception as exc:
+            logger.error("Tool failed name=%s exception_type=%s", func.__name__, type(exc).__name__)
             raise
-
     return wrapper
